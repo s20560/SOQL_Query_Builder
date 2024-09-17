@@ -407,6 +407,7 @@ public class BuilderWindowLogic {
                 addedFilters.clear();
                 sortingFilters.clear();
                 limit = "";
+                BuilderWindow.queryTextArea.setText("");
                 break;
         };
     }

@@ -283,6 +283,7 @@ public class BuilderWindow {
                                 BuilderWindowLogic.clearFields(Integer.parseInt(c.getName()));
                             }
                         }
+                        BuilderWindowLogic.writeQuery();
                         try {
                             parentFields = BuilderWindowLogic.getSobjectFields(objectName, false, buttonLevel);
                         } catch (IOException ex) {
