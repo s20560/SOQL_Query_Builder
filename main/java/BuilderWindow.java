@@ -1,8 +1,6 @@
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.WrapLayout;
-import net.miginfocom.swing.MigLayout;
-
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
@@ -12,6 +10,8 @@ import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class BuilderWindow {
@@ -73,8 +73,7 @@ public class BuilderWindow {
         gbc.weightx = 1;
         gbc.gridx = 1;
         gbc.gridy = 1;
-        ComboBox<String> operators = new ComboBox<>(new String[]{"=", "=:", "!=", "!=:", ">", "<", ">=", "<="
-                ,"in", "not in", "like", "includes", "excludes", "starts with", "ends with", "contains"});
+        ComboBox<String> operators = new ComboBox<>(BuilderWindowLogic.operators);
         fieldSelectorPanel.add(operators, gbc);
 
         gbc.weightx = 0;
@@ -147,12 +146,12 @@ public class BuilderWindow {
         gbc2.weightx = 1;
         gbc2.gridx = 2;
         gbc2.gridy = 0;
-        ComboBox<String> sortingOptions = new ComboBox<String>(new String[]{"ASC", "DESC"});
+        ComboBox<String> sortingOptions = new ComboBox<>(BuilderWindowLogic.sortingDirections);
         orderByPanel.add(sortingOptions, gbc2);
         gbc2.weightx = 1;
         gbc2.gridx = 3;
         gbc2.gridy = 0;
-        ComboBox<String> nullsOptions = new ComboBox<String>(new String[]{"NULLS...", "NULLS FIRST", "NULLS LAST"});
+        ComboBox<String> nullsOptions = new ComboBox<>(BuilderWindowLogic.nullsOptions);
         orderByPanel.add(nullsOptions, gbc2);
         gbc1.gridx = 4;
         gbc1.gridy = 0;
@@ -185,7 +184,7 @@ public class BuilderWindow {
                 updateLimit();
             }
             public void updateLimit() {
-                if (!BuilderWindowLogic.objectName_0.equals("")) {
+                if (BuilderWindowLogic.addedObjects.get(0) != null) {
                     BuilderWindowLogic.handleLimitUpdate(limitInput.getText());
                 }
             }
@@ -225,17 +224,16 @@ public class BuilderWindow {
             @Override
             public void actionPerformed(ActionEvent e) {
                 String selectedObject = objectPicklist.getSelectedItem().toString();
-                List<List<String>> fields = null;
-                BuilderWindowLogic.clearFields(5);
+                SoqlObject sobject;
+                BuilderWindowLogic.clearAll();
                 try {
-                    fields = BuilderWindowLogic.getSobjectFields(selectedObject, true, 0);
+                    sobject = BuilderWindowLogic.getSobject(selectedObject, true);
                 } catch (IOException ex) {
                     throw new RuntimeException(ex);
                 }
                 fieldsCheckboxPanel.removeAll();
-                BuilderWindowLogic.queryLevel = 0;
                 queryTextArea.setText("");
-                buildSelectionArea(fields);
+                buildSelectionArea(sobject);
             }
         });
     }
@@ -244,54 +242,35 @@ public class BuilderWindow {
         return builderContent;
     }
 
-    private static void buildSelectionArea(List<List<String>> fields) {
+    private static void buildSelectionArea(SoqlObject sobject) {
         JPanel fieldsPanel = new JPanel();
         fieldsPanel.setLayout(new BoxLayout(fieldsPanel, BoxLayout.Y_AXIS));
-        fieldsPanel.setName(String.valueOf(BuilderWindowLogic.queryLevel));
-        for (int i = 0; i < fields.get(0).size(); i++) {
-            JCheckBox checkBox = new JCheckBox(fields.get(0).get(i));
-            checkBox.setName(String.valueOf(BuilderWindowLogic.queryLevel));
+        fieldsPanel.setName(String.valueOf(sobject.level));
+        List<String> sortedFields = new ArrayList<>();
+        for (var entry : sobject.fieldsByType.entrySet()) {
+            sortedFields.add(entry.getKey());
+        }
+        Collections.sort(sortedFields);
+        for (String field : sortedFields) {
+            JCheckBox checkBox = new JCheckBox(field);
+            checkBox.setName(String.valueOf(sobject.level));
             checkBox.addActionListener(new ActionListener() {
                 @Override
                 public void actionPerformed(ActionEvent e) {
-                    BuilderWindowLogic.processCheckbox(Integer.parseInt(checkBox.getName()), checkBox.isSelected(), checkBox.getText());
+                    BuilderWindowLogic.processCheckbox(sobject.level, checkBox.isSelected(), field);
                 }
             });
             fieldsPanel.add(checkBox);
         }
         fieldsPanel.add(new JSeparator(SwingConstants.HORIZONTAL));
-        if (fields.size() > 1 && BuilderWindowLogic.queryLevel < 4) {
-            for (int i = 0; i < fields.get(1).size(); i++) {
-                String objectName = fields.get(1).get(i);
-                JButton parentButton = new JButton(objectName + " >");
-                parentButton.setAlignmentX(Component.LEFT_ALIGNMENT);
-                parentButton.setName(String.valueOf(BuilderWindowLogic.queryLevel));
-                parentButton.addActionListener(new ActionListener() {
-                    @Override
-                    public void actionPerformed(ActionEvent e) {
-                        for (Component c : fieldsPanel.getComponents()) {
-                            if (c.getName() != null && c.getName().equals(parentButton.getName())) {
-                                c.setEnabled(true);
-                            }
-                        }
-                        parentButton.setEnabled(false);
-                        int buttonLevel = Integer.parseInt(parentButton.getName());
-                        List<List<String>> parentFields = null;
-                        for (Component c : fieldsCheckboxPanel.getComponents()) {
-                            if (Integer.parseInt(c.getName()) > buttonLevel) {
-                                fieldsCheckboxPanel.remove(c);
-                                BuilderWindowLogic.clearFields(Integer.parseInt(c.getName()));
-                            }
-                        }
-                        BuilderWindowLogic.writeQuery();
-                        try {
-                            parentFields = BuilderWindowLogic.getSobjectFields(objectName, false, buttonLevel);
-                        } catch (IOException ex) {
-                            throw new RuntimeException(ex);
-                        }
-                        buildSelectionArea(parentFields);
-                    }
-                });
+        if (!sobject.relationByType.isEmpty() && sobject.level < BuilderWindowLogic.objectsTreeLimit) {
+            List<String> sortedRelations = new ArrayList<>();
+            for (var entry : sobject.relationByType.entrySet()) {
+                sortedRelations.add(entry.getKey());
+            }
+            Collections.sort(sortedRelations);
+            for (String relation : sortedRelations) {
+                JButton parentButton = getParentButton(sobject, relation, fieldsPanel);
                 fieldsPanel.add(parentButton, BorderLayout.NORTH);
             }
             fieldsPanel.add(new JSeparator(SwingConstants.HORIZONTAL));
@@ -302,5 +281,37 @@ public class BuilderWindow {
         fieldsCheckboxPanel.add(scrollPane, BorderLayout.NORTH);
         fieldsCheckboxPanel.revalidate();
         fieldsCheckboxPanel.repaint();
+    }
+
+    private static JButton getParentButton(SoqlObject sobject, String relation, JPanel fieldsPanel) {
+        JButton parentButton = new JButton(relation + " >");
+        parentButton.setAlignmentX(Component.LEFT_ALIGNMENT);
+        parentButton.setName(String.valueOf(sobject.level));
+        parentButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                for (Component c : fieldsPanel.getComponents()) {
+                    if (c.getName() != null && c.getName().equals(parentButton.getName())) {
+                        c.setEnabled(true);
+                    }
+                }
+                parentButton.setEnabled(false);
+                SoqlObject parentObject;
+                for (Component c : fieldsCheckboxPanel.getComponents()) {
+                    if (Integer.parseInt(c.getName()) > Integer.parseInt(parentButton.getName())) {
+                        fieldsCheckboxPanel.remove(c);
+                        BuilderWindowLogic.clearLevel(Integer.parseInt(c.getName()));
+                    }
+                }
+                BuilderWindowLogic.writeQuery();
+                try {
+                    parentObject = BuilderWindowLogic.getSobject(relation, false);
+                } catch (IOException ex) {
+                    throw new RuntimeException(ex);
+                }
+                buildSelectionArea(parentObject);
+            }
+        });
+        return parentButton;
     }
 }
